@@ -1,7 +1,11 @@
-# 달리기 · Running Dashboard
+# 하트라인 · Heartline
 
 내 러닝 기록(Strava)을 **심박수 색상 루트**로 지도에 그려주는 개인 대시보드.
-마라톤 코스 GPX 오버레이 지원. moa 허브 자매 앱들과 같은 단일 파일 + 디자인 토큰 구조.
+**Google 로그인 + Firestore 클라우드 동기화**로 어디서든 내 기록 조회. 마라톤 코스 GPX 오버레이 지원.
+moa 허브 자매 앱들과 같은 단일 파일 + 디자인 토큰 구조.
+
+- 저장소: https://github.com/ClayborneYeounjunLee/heartline
+- 웹: https://clayborneyeounjunlee.github.io/heartline/ (GitHub Pages 켠 후)
 
 > 📄 전체 설계/로드맵: 상위 폴더의 `러닝_대시보드_구축_계획.md` (AWS Webhook 자동화는 그 문서의 Phase 2~)
 > 이 저장소는 그 계획의 **로컬 우선 MVP** — 수동 당기기(pull) 방식으로 전체 데이터 파이프라인을 먼저 완성한 버전.
@@ -19,8 +23,9 @@ Strava API 약관(2024 개정)상 **API로 받은 활동 데이터는 "본인에
 | 합성 샘플 (`data/samples/`) | ✅ 공개 OK (가짜 데이터) |
 | **실제 기록 (`data/runs/`)** | ❌ **절대 공개 금지** — `.gitignore` 처리됨 |
 | Strava 시크릿 (`tools/.env`) | ❌ **절대 공개 금지** — `.gitignore` 처리됨 |
+| Firestore의 내 기록 | ✅ OK — 규칙이 **본인 uid만** 읽기/쓰기 허용 → "본인에게만 표시" 요건 충족 |
 
-- 실데이터 대시보드는 **로컬에서만** 열기 (또는 비공개 호스팅 + 인증 게이트).
+- 실데이터는 **Google 로그인 뒤에서만** 보임 (Firestore 규칙 = 인증 게이트). 익명 방문자는 샘플만 봄.
 - API 데이터를 **AI 모델 입력으로 사용 금지** (약관 명시).
 - 공개 페이지를 만들려면: Strava **공식 임베드**(iframe) 또는 **직접 내보낸 GPX**만 사용 (계획 문서 3장).
 - 추가 보호: 수집기가 루트 시작/끝 200m를 잘라냄 (`TRIM_METERS`) → 집 위치 노출 방지.
@@ -51,7 +56,7 @@ Strava API 약관(2024 개정)상 **API로 받은 활동 데이터는 "본인에
 
 ### 2. 설정 파일
 ```bash
-cd running
+cd heartline
 copy tools\.env.example tools\.env     # 그리고 CLIENT_ID / SECRET 채우기
 ```
 
@@ -75,6 +80,29 @@ node tools/strava_pull.js              # 새 러닝 → data/runs/*.geojson
 npx serve . 또는 아무 정적 서버        # ES모듈 아님이라 file:// 도 되지만 fetch 때문에 서버 필요
 ```
 데이터가 없으면 대시보드는 자동으로 `data/samples/` 합성 데이터를 보여준다 (📦 배지 표시).
+
+### 6. ☁ 클라우드 동기화 (온라인에서 보기)
+
+haru/jangbu와 같은 Firebase 프로젝트(`haru-221ae`)를 재사용, 컬렉션만 `heartline`.
+
+**1회 설정 (Firebase 콘솔):** Firestore → 규칙에 아래 블록 추가 후 게시:
+```
+match /heartline/{uid} {
+  allow read, write: if request.auth != null && request.auth.uid == uid;
+  match /runs/{runId} {
+    allow read, write: if request.auth != null && request.auth.uid == uid;
+  }
+}
+```
+(GitHub Pages 도메인은 haru/jangbu 때 이미 승인된 도메인이라 추가 작업 없음.)
+
+**사용 흐름:**
+1. 로컬 대시보드(이 PC, `data/runs/` 있는 곳)에서 우상단 👤 → Google 로그인
+2. "⬆ 로컬 기록 N건 업로드" 클릭 → Firestore에 저장 (`heartline/{uid}` 인덱스 + `runs/{id}` 문서)
+3. 이후 아무 기기에서나 https://clayborneyeounjunlee.github.io/heartline/ 열고 로그인 → 내 기록 조회
+
+데이터 모델: `heartline/{uid}` = `{ runs: [메타] }`, `heartline/{uid}/runs/{id}` = `{ ...메타, geo: GeoJSON 문자열 }`
+(GeoJSON을 문자열로 넣는 이유: Firestore는 중첩 배열을 지원하지 않음. 러닝 1건 ≈ 100~200KB로 문서 한도 1MB 이내.)
 
 ---
 
@@ -102,8 +130,8 @@ properties: id, name, sport_type, start_date, distance_m, moving_time_s,
 ## 파일 구조
 
 ```
-running/
-├─ index.html            # 대시보드 (단일 파일: 지도+패널+차트)
+heartline/
+├─ index.html            # 대시보드 (단일 파일: 지도+패널+차트+클라우드)
 ├─ data/
 │  ├─ samples/           # 합성 데모 데이터 (커밋됨)
 │  └─ runs/              # 실데이터 (gitignore — 생성 시 자동)
@@ -116,7 +144,8 @@ running/
 
 ## 로드맵 (계획 문서와 연결)
 
-- [x] Phase A — 로컬 MVP: 수동 pull + 심박 지도 + GPX 코스 (**이 저장소**)
+- [x] Phase A — 로컬 MVP: 수동 pull + 심박 지도 + GPX 코스
+- [x] Phase A+ — Google 로그인 + Firestore 클라우드 동기화 (어디서든 조회)
 - [ ] Phase B — `--check` 로 Mi Fitness 심박 동기화 실증 (러닝 1회 필요)
 - [ ] Phase C — AWS Webhook 자동화: API Gateway + Lambda + SQS + S3 (계획 문서 Phase 1~4, Python으로 이관)
 - [ ] Phase D — 공개 페이지: 공식 임베드 or 자가발행 GPX 레이어 (약관 세이프 경로만)

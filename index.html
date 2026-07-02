@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#f4f4f1">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Running">
-<title>달리기 · Running Dashboard</title>
+<meta name="apple-mobile-web-app-title" content="Heartline">
+<title>하트라인 · Heartline</title>
 <script>
 /* 깜빡임 없이 테마 먼저 적용 (모아 앱들과 동일 패턴 · hub-theme 공유) */
 (function(){ try{ var t=localStorage.getItem("hub-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"); document.documentElement.dataset.theme=t; }catch(e){} })();
@@ -147,6 +147,22 @@
   .hint{font-size:12px;color:var(--sub);line-height:1.6;margin-top:10px}
   .hint code{background:var(--seg-bg);padding:1px 6px;border-radius:6px;font-size:11px}
   input[type=file]{display:none}
+
+  /* ── 인증 모달 ── */
+  .overlay{position:fixed;inset:0;z-index:1300;background:rgba(10,12,20,.45);display:grid;place-items:center;padding:20px}
+  .modal{
+    width:100%;max-width:360px;background:var(--card);border-radius:18px;box-shadow:var(--shadow);
+    padding:20px 18px 14px;
+  }
+  .modal h2{margin:0 0 6px;font-size:17px}
+  .modal .desc{font-size:13px;color:var(--sub);line-height:1.6;margin-bottom:14px}
+  .modal .who{display:flex;align-items:center;gap:10px;background:var(--seg-bg);border:1px solid var(--line);
+    border-radius:12px;padding:10px 12px;margin-bottom:12px}
+  .modal .who img{width:32px;height:32px;border-radius:50%;flex:none}
+  .modal .who b{display:block;font-size:13.5px}
+  .modal .who .sub2{font-size:11.5px;color:var(--sub)}
+  .modal .btn{width:100%;margin-bottom:8px}
+  .modal .close{background:none;border:none;color:var(--sub);font-size:13px;cursor:pointer;width:100%;padding:8px 6px 4px}
 </style>
 </head>
 <body>
@@ -155,14 +171,15 @@
 
 <header>
   <div class="brand">
-    <div class="logo">🏃</div>
+    <div class="logo">♥</div>
     <div>
-      <h1 id="t-title">달리기</h1>
-      <div class="tag" id="t-sub">러닝 지도 대시보드</div>
+      <h1 id="t-title">하트라인</h1>
+      <div class="tag" id="t-sub">심박 러닝 지도</div>
     </div>
   </div>
   <div class="sp"></div>
   <a class="iconbtn moa-btn" href="https://clayborneyeounjunlee.github.io/moa/" title="moa hub">⌂</a>
+  <button class="iconbtn" id="btn-auth" title="클라우드 동기화">👤</button>
   <button class="iconbtn" id="btn-lang" title="한국어/English">Aa</button>
   <button class="iconbtn" id="btn-theme" title="테마">◐</button>
 </header>
@@ -217,6 +234,21 @@
   </div>
 </div>
 
+<div class="overlay" id="auth-overlay" style="display:none">
+  <div class="modal">
+    <h2 id="am-title">클라우드 동기화</h2>
+    <div class="desc" id="am-desc"></div>
+    <div class="who" id="am-who" style="display:none">
+      <img id="am-photo" alt="" referrerpolicy="no-referrer">
+      <div><b id="am-name"></b><span class="sub2" id="am-email"></span></div>
+    </div>
+    <button class="btn" id="am-login" style="display:none">Google로 로그인</button>
+    <button class="btn" id="am-upload" style="display:none"></button>
+    <button class="btn ghost" id="am-logout" style="display:none">로그아웃</button>
+    <button class="close" id="am-close">닫기</button>
+  </div>
+</div>
+
 <script>
 (function(){
 "use strict";
@@ -224,26 +256,41 @@
 /* ════ i18n ════ */
 var LANG = localStorage.getItem("hub-lang") || "ko";
 var I18N = {
-  ko:{ title:"달리기", sub:"러닝 지도 대시보드", runs:"러닝", totalkm:"누적 km", monthkm:"이번 달 km",
+  ko:{ title:"하트라인", sub:"심박 러닝 지도", runs:"러닝", totalkm:"누적 km", monthkm:"이번 달 km",
        avgpace:"평균 페이스", showall:"🗺 전체 루트", loadgpx:"📁 코스 GPX", back:"← 목록으로",
        time:"시간", pace:"페이스", elev:"고도 ↑m", avghr:"평균 심박", maxhr:"최고 심박",
        sample:"📦 샘플 데이터 표시 중 — 실제 기록은 tools/strava_pull.js 로 수집",
        hint:'실제 Strava 기록 연동: <code>tools/strava_pull.js</code> 실행 → <code>data/runs/</code> 생성.<br>⚠️ 실제 데이터(<code>data/runs/</code>)는 공개 저장소에 올리지 않기 (Strava 약관 + 집 위치 보호).',
-       chartcap:"심박(빨강) · 고도(회색)", nodata:"기록이 없어요. tools/strava_pull.js 를 실행해 주세요." },
-  en:{ title:"Running", sub:"Running map dashboard", runs:"runs", totalkm:"total km", monthkm:"this month km",
+       chartcap:"심박(빨강) · 고도(회색)", nodata:"기록이 없어요. tools/strava_pull.js 를 실행해 주세요.",
+       cloud:"클라우드 동기화", login:"Google로 로그인", logout:"로그아웃", close:"닫기",
+       clouddesc:"구글로 로그인하면 러닝 기록이 클라우드(Firestore)에 저장돼 어디서든 볼 수 있어요. 데이터는 내 계정만 읽고 쓸 수 있습니다.",
+       cloudn:"클라우드에 {n}건 저장됨.", cloudempty:"클라우드가 비어 있어요 — 기록이 있는 PC에서 로그인 후 업로드하세요.",
+       upload:"⬆ 로컬 기록 {n}건 업로드", uploading:"업로드 중... {i}/{n}", uploaddone:"업로드 완료!",
+       nocloud:"클라우드 연결 실패 — 오프라인 모드로 동작 중.", loginfail:"로그인 실패: " },
+  en:{ title:"Heartline", sub:"Heart-rate running map", runs:"runs", totalkm:"total km", monthkm:"this month km",
        avgpace:"avg pace", showall:"🗺 All routes", loadgpx:"📁 Course GPX", back:"← Back to list",
        time:"time", pace:"pace", elev:"elev ↑m", avghr:"avg HR", maxhr:"max HR",
        sample:"📦 Showing sample data — run tools/strava_pull.js to sync real activities",
        hint:'Sync real Strava data: run <code>tools/strava_pull.js</code> → creates <code>data/runs/</code>.<br>⚠️ Never publish real data (<code>data/runs/</code>) to a public repo (Strava ToS + home privacy).',
-       chartcap:"Heart rate (red) · Altitude (grey)", nodata:"No runs yet. Run tools/strava_pull.js first." }
+       chartcap:"Heart rate (red) · Altitude (grey)", nodata:"No runs yet. Run tools/strava_pull.js first.",
+       cloud:"Cloud sync", login:"Sign in with Google", logout:"Sign out", close:"Close",
+       clouddesc:"Sign in with Google to store your runs in the cloud (Firestore) and view them anywhere. Only your account can read or write your data.",
+       cloudn:"{n} runs stored in the cloud.", cloudempty:"Cloud is empty — sign in on the PC that has your data and upload.",
+       upload:"⬆ Upload {n} local runs", uploading:"Uploading... {i}/{n}", uploaddone:"Upload complete!",
+       nocloud:"Cloud unavailable — running in offline mode.", loginfail:"Sign-in failed: " }
 };
 function t(k){ return I18N[LANG][k] || k; }
+function tf(k, vars){ var s=t(k); Object.keys(vars||{}).forEach(function(v){ s=s.replace("{"+v+"}", vars[v]); }); return s; }
 function applyLang(){
   document.getElementById("t-title").textContent = t("title");
   document.getElementById("t-sub").textContent = t("sub");
   document.getElementById("badge-sample").textContent = t("sample");
   document.getElementById("t-hint").innerHTML = t("hint");
   document.getElementById("chart-cap").textContent = t("chartcap");
+  document.getElementById("am-title").textContent = t("cloud");
+  document.getElementById("am-login").textContent = t("login");
+  document.getElementById("am-logout").textContent = t("logout");
+  document.getElementById("am-close").textContent = t("close");
   document.querySelectorAll("[data-i]").forEach(function(el){ el.textContent = t(el.dataset.i); });
   document.documentElement.lang = LANG;
 }
@@ -300,12 +347,59 @@ function zoneOf(hr){
 
 /* ════ 상태 ════ */
 var BASE = null;          /* "data/runs" 또는 "data/samples" */
-var INDEX = [];           /* index.json 의 runs 배열 */
+var INDEX = [];           /* 현재 화면의 runs 배열 (local/sample/cloud) */
+var LOCAL_INDEX = [];     /* 로컬(index.json)에서 읽은 runs */
 var geoCache = {};        /* id → geojson */
 var routeLayers = [];     /* 현재 상세 루트 레이어 */
 var allLayer = null;      /* 전체 루트 오버레이 */
 var gpxLayers = [];       /* GPX 코스 레이어 */
 var selectedId = null;
+
+/* ════ 클라우드 (Firebase — haru 프로젝트 재사용 · 컬렉션만 heartline) ════
+   apiKey는 비밀번호가 아니라 공개되어도 되는 식별자입니다(보안은 Firestore 규칙 담당).
+   클라우드 저장을 켜려면 Firestore 규칙에 아래를 추가하세요:
+     match /heartline/{uid} {
+       allow read, write: if request.auth != null && request.auth.uid == uid;
+       match /runs/{runId} { allow read, write: if request.auth != null && request.auth.uid == uid; }
+     }
+*/
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAxCjsP9lUJ2AO2a_HCKXBrBYL5E8XADVA",
+  authDomain: "haru-221ae.firebaseapp.com",
+  projectId: "haru-221ae",
+  storageBucket: "haru-221ae.firebasestorage.app",
+  messagingSenderId: "29512708600",
+  appId: "1:29512708600:web:1f96f2645293ddfae9660d",
+  measurementId: "G-GFJKJ7ESEF"
+};
+var FB = null;            /* Firebase 핸들 (로드 실패 시 null = 오프라인) */
+var USER = null;          /* 로그인 사용자 */
+var CLOUD_METAS = null;   /* 클라우드 index (heartline/{uid} 문서의 runs 배열) */
+
+function initFirebase(){
+  var base = "https://www.gstatic.com/firebasejs/12.14.0/";
+  return Promise.all([
+    import(base + "firebase-app.js"),
+    import(base + "firebase-auth.js"),
+    import(base + "firebase-firestore.js")
+  ]).then(function(m){
+    var appM = m[0], authM = m[1], fsM = m[2];
+    var app = appM.initializeApp(FIREBASE_CONFIG);
+    var auth = authM.getAuth(app);
+    var db = fsM.initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+      localCache: fsM.persistentLocalCache({ tabManager: fsM.persistentSingleTabManager() })
+    });
+    FB = {
+      auth:auth, db:db, provider:new authM.GoogleAuthProvider(),
+      signInWithPopup:authM.signInWithPopup, onAuthStateChanged:authM.onAuthStateChanged, signOut:authM.signOut,
+      doc:fsM.doc, getDoc:fsM.getDoc, setDoc:fsM.setDoc
+    };
+    return true;
+  }).catch(function(e){ console.error("Firebase 로드 실패:", e); return false; });
+}
+function cloudIndexDoc(){ return FB.doc(FB.db, "heartline", USER.uid); }
+function cloudRunDoc(id){ return FB.doc(FB.db, "heartline", USER.uid, "runs", String(id)); }
 
 /* ════ 유틸 ════ */
 function fmtKm(m){ return (m/1000).toFixed(1); }
@@ -324,7 +418,7 @@ function fmtDate(iso){
   return (d.getMonth()+1)+"/"+d.getDate() + (LANG==="ko" ? " ("+"일월화수목금토"[d.getDay()]+")" : "");
 }
 
-/* ════ 데이터 로드 (실데이터 → 없으면 샘플) ════ */
+/* ════ 데이터 로드 (클라우드 → 로컬 → 샘플) ════ */
 function loadIndex(){
   return fetch("data/runs/index.json", {cache:"no-store"})
     .then(function(r){ if(!r.ok) throw 0; return r.json(); })
@@ -332,14 +426,39 @@ function loadIndex(){
     .catch(function(){
       return fetch("data/samples/index.json", {cache:"no-store"})
         .then(function(r){ if(!r.ok) throw 0; return r.json(); })
-        .then(function(j){ BASE = "data/samples"; document.getElementById("badge-sample").style.display="block"; return j; });
+        .then(function(j){ BASE = "data/samples"; return j; });
     });
 }
 function loadRun(id){
   if(geoCache[id]) return Promise.resolve(geoCache[id]);
   var item = INDEX.find(function(r){ return r.id===id; });
+  if(item && item.src==="cloud"){
+    return FB.getDoc(cloudRunDoc(id)).then(function(snap){
+      if(!snap.exists()) throw new Error("cloud run missing: "+id);
+      var g = JSON.parse(snap.data().geo);
+      geoCache[id]=g; return g;
+    });
+  }
   return fetch(BASE+"/"+item.file, {cache:"no-store"}).then(function(r){ return r.json(); })
     .then(function(g){ geoCache[id]=g; return g; });
+}
+function byDateDesc(a,b){ return String(b.start_date).localeCompare(String(a.start_date)); }
+
+/* 표시 소스 결정: 로그인+클라우드에 데이터 → 클라우드 / 아니면 로컬(→샘플) */
+function applySource(){
+  geoCache = {}; selectedId = null; clearRoute();
+  if(allLayer){ map.removeLayer(allLayer); allLayer=null; document.getElementById("btn-all").classList.remove("on"); }
+  if(USER && CLOUD_METAS && CLOUD_METAS.length){
+    INDEX = CLOUD_METAS.map(function(m){ return Object.assign({}, m, {src:"cloud"}); }).sort(byDateDesc);
+  } else {
+    INDEX = LOCAL_INDEX.slice().sort(byDateDesc);
+  }
+  var isSample = INDEX.length && INDEX[0].src==="sample";
+  document.getElementById("badge-sample").style.display = isSample ? "block" : "none";
+  document.getElementById("view-detail").style.display = "none";
+  document.getElementById("view-list").style.display = "block";
+  renderTotals(); renderList();
+  if(INDEX.length) selectRun(INDEX[0].id);
 }
 
 /* ════ 요약 통계 ════ */
@@ -531,14 +650,109 @@ var panel = document.getElementById("panel");
 document.getElementById("grip").onclick = function(){ panel.classList.toggle("collapsed"); };
 function collapseOnMobile(){ if(matchMedia("(max-width:759px)").matches) panel.classList.add("collapsed"); }
 
+/* ════ 인증 UI ════ */
+function localUploadables(){
+  if(BASE!=="data/runs" || !USER || !CLOUD_METAS) return [];
+  return LOCAL_INDEX.filter(function(l){
+    return l.src==="local" && !CLOUD_METAS.some(function(c){ return String(c.id)===String(l.id); });
+  });
+}
+function renderAuthUI(){
+  var authBtn = document.getElementById("btn-auth");
+  var who = document.getElementById("am-who"), login = document.getElementById("am-login"),
+      logout = document.getElementById("am-logout"), up = document.getElementById("am-upload"),
+      desc = document.getElementById("am-desc");
+  authBtn.textContent = USER ? "☁" : "👤";
+  if(!FB){
+    desc.textContent = t("nocloud");
+    who.style.display = login.style.display = logout.style.display = up.style.display = "none";
+    return;
+  }
+  if(USER){
+    who.style.display = "flex"; login.style.display = "none"; logout.style.display = "block";
+    document.getElementById("am-photo").src = USER.photoURL || "";
+    document.getElementById("am-name").textContent = USER.displayName || "";
+    document.getElementById("am-email").textContent = USER.email || "";
+    var n = (CLOUD_METAS||[]).length;
+    desc.textContent = n ? tf("cloudn",{n:n}) : t("cloudempty");
+    var ups = localUploadables();
+    if(ups.length){ up.style.display = "block"; up.disabled = false; up.textContent = tf("upload",{n:ups.length}); }
+    else up.style.display = "none";
+  } else {
+    who.style.display = "none"; login.style.display = "block"; logout.style.display = "none"; up.style.display = "none";
+    desc.textContent = t("clouddesc");
+  }
+}
+document.getElementById("btn-auth").onclick = function(){
+  renderAuthUI();
+  document.getElementById("auth-overlay").style.display = "grid";
+};
+document.getElementById("am-close").onclick = function(){ document.getElementById("auth-overlay").style.display = "none"; };
+document.getElementById("auth-overlay").onclick = function(e){ if(e.target===this) this.style.display="none"; };
+document.getElementById("am-login").onclick = function(){
+  FB.signInWithPopup(FB.auth, FB.provider).catch(function(e){ alert(t("loginfail") + (e.message||e.code||e)); });
+};
+document.getElementById("am-logout").onclick = function(){
+  FB.signOut(FB.auth);
+  document.getElementById("auth-overlay").style.display = "none";
+};
+document.getElementById("am-upload").onclick = function(){
+  var btn = this, list = localUploadables();
+  if(!list.length) return;
+  btn.disabled = true;
+  var i = 0, uploaded = [];
+  function next(){
+    if(i >= list.length){
+      CLOUD_METAS = (CLOUD_METAS||[]).concat(uploaded).sort(byDateDesc);
+      return FB.setDoc(cloudIndexDoc(), { runs: CLOUD_METAS, updated: new Date().toISOString() })
+        .then(function(){ btn.textContent = t("uploaddone"); applySource(); renderAuthUI(); });
+    }
+    var m = list[i];
+    btn.textContent = tf("uploading", {i:i+1, n:list.length});
+    return fetch(BASE+"/"+m.file, {cache:"no-store"}).then(function(r){ return r.json(); }).then(function(geo){
+      var s = JSON.stringify(geo);
+      if(s.length > 900000){ console.warn("너무 큼, 건너뜀:", m.id); i++; return next(); }
+      var meta = Object.assign({}, m); delete meta.file; delete meta.src;
+      return FB.setDoc(cloudRunDoc(m.id), Object.assign({}, meta, { geo: s }))
+        .then(function(){ uploaded.push(meta); i++; return next(); });
+    });
+  }
+  next().catch(function(e){
+    alert("Upload error: " + (e.message||e) + "\n(Firestore 규칙에 heartline 컬렉션 허용이 필요할 수 있어요 — README 참고)");
+    btn.disabled = false; renderAuthUI();
+  });
+};
+
 /* ════ 부팅 ════ */
 applyLang();
 loadIndex().then(function(j){
-  INDEX = (j.runs||[]).slice().sort(function(a,b){ return b.start_date.localeCompare(a.start_date); });
-  renderTotals(); renderList();
-  if(INDEX.length) selectRun(INDEX[0].id);
+  LOCAL_INDEX = (j.runs||[]).map(function(r){
+    return Object.assign({}, r, { src: BASE==="data/samples" ? "sample" : "local" });
+  });
+  if(!USER) applySource();
 }).catch(function(){
-  document.getElementById("runlist").innerHTML = '<div class="hint">'+t("nodata")+'</div>';
+  LOCAL_INDEX = [];
+  if(!USER) applySource();
+});
+initFirebase().then(function(ok){
+  renderAuthUI();
+  if(!ok) return;
+  FB.onAuthStateChanged(FB.auth, function(user){
+    USER = user;
+    if(user){
+      FB.getDoc(cloudIndexDoc()).then(function(snap){
+        CLOUD_METAS = (snap.exists() && (snap.data().runs || [])) || [];
+        applySource(); renderAuthUI();
+      }).catch(function(e){
+        console.error("클라우드 index 로드 실패:", e);
+        CLOUD_METAS = [];
+        applySource(); renderAuthUI();
+      });
+    } else {
+      CLOUD_METAS = null;
+      applySource(); renderAuthUI();
+    }
+  });
 });
 
 })();
