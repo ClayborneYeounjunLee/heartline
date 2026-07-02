@@ -1,0 +1,5 @@
+# 실제 러닝 데이터 — Strava 약관(본인 외 표시 금지) + 집 위치 보호 때문에 절대 공개 금지
+data/runs/
+
+# Strava 앱 시크릿/토큰
+tools/.env

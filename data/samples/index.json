@@ -1,0 +1,43 @@
+{
+ "runs": [
+  {
+   "id": "sample-1",
+   "file": "sample-1.geojson",
+   "name": "한강 아침 러닝 (샘플)",
+   "sport_type": "Run",
+   "start_date": "2026-06-28T07:10:00",
+   "distance_m": 9779,
+   "moving_time_s": 3041,
+   "elev_gain_m": 5,
+   "avg_hr": 153,
+   "max_hr": 162,
+   "has_hr": true
+  },
+  {
+   "id": "sample-2",
+   "file": "sample-2.geojson",
+   "name": "남산 언덕 러닝 (샘플)",
+   "sport_type": "Run",
+   "start_date": "2026-06-25T18:40:00",
+   "distance_m": 7381,
+   "moving_time_s": 2747,
+   "elev_gain_m": 132,
+   "avg_hr": 169,
+   "max_hr": 180,
+   "has_hr": true
+  },
+  {
+   "id": "sample-3",
+   "file": "sample-3.geojson",
+   "name": "인터벌 400m×8 (샘플)",
+   "sport_type": "Run",
+   "start_date": "2026-06-22T19:05:00",
+   "distance_m": 4533,
+   "moving_time_s": 1549,
+   "elev_gain_m": 2,
+   "avg_hr": 153,
+   "max_hr": 171,
+   "has_hr": true
+  }
+ ]
+}

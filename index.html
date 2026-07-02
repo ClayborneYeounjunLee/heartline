@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#f4f4f1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Running">
+<title>달리기 · Running Dashboard</title>
+<script>
+/* 깜빡임 없이 테마 먼저 적용 (모아 앱들과 동일 패턴 · hub-theme 공유) */
+(function(){ try{ var t=localStorage.getItem("hub-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"); document.documentElement.dataset.theme=t; }catch(e){} })();
+</script>
+<!-- Leaflet (무료·키 불필요) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<style>
+  /* ════ 디자인 토큰 — moa/haru/kanade/tonggeun 공통 시스템 ════ */
+  :root{
+    --bg:#f4f4f1; --card:#ffffff; --ink:#191b22; --sub:#8a8d99;
+    --line:#e8e8ed; --accent:#e05d3a; --accent2:#f2703d; --accent-soft:#fdeae4;
+    --green:#2f9e63; --red:#d64545; --amber:#e6920b; --blue:#4f8ef7;
+    --seg-bg:#e9e9ec; --input-bg:#fafafc;
+    --shadow:0 1px 2px rgba(16,18,28,.04), 0 10px 28px rgba(16,18,28,.07);
+    --radius:16px; color-scheme:light;
+  }
+  html[data-theme="dark"]{
+    --bg:#111219; --card:#1b1d27; --ink:#e9eaf0; --sub:#9094a6;
+    --line:#2b2e3c; --accent:#f0774f; --accent2:#f68e63; --accent-soft:#39201a;
+    --green:#41b97c; --red:#ef6e6e; --amber:#f3b13e; --blue:#6ea3ff;
+    --seg-bg:#252734; --input-bg:#14151d;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px rgba(0,0,0,.45);
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg); color:var(--ink); overflow:hidden; letter-spacing:-0.01em;
+    -webkit-font-smoothing:antialiased;
+  }
+  #map{position:absolute; inset:0; background:var(--seg-bg)}
+  html[data-theme="dark"] .leaflet-container{background:#0d0e14}
+  .leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.7)!important}
+  html[data-theme="dark"] .leaflet-control-attribution{background:rgba(20,21,29,.7)!important;color:#9094a6}
+  html[data-theme="dark"] .leaflet-control-attribution a{color:#84acff}
+  .leaflet-bar a{background:var(--card)!important;color:var(--ink)!important;border-color:var(--line)!important}
+  .leaflet-top.leaflet-right{margin-top:calc(56px + env(safe-area-inset-top))}
+
+  /* ── 헤더 ── */
+  header{
+    position:absolute; top:0; left:0; right:0; z-index:1100;
+    display:flex; align-items:center; gap:10px;
+    padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+    background:linear-gradient(180deg, var(--bg) 55%, transparent);
+    pointer-events:none;
+  }
+  header .brand{display:flex;align-items:center;gap:9px;pointer-events:auto}
+  header .logo{
+    width:34px;height:34px;border-radius:10px;flex:none;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:grid;place-items:center;color:#fff;font-weight:800;font-size:17px;
+    box-shadow:var(--shadow);
+  }
+  header h1{font-size:16px;margin:0;line-height:1.1;font-weight:800;letter-spacing:-.3px}
+  header .tag{font-size:11px;color:var(--sub);margin-top:1px}
+  header .sp{flex:1}
+  .iconbtn{
+    pointer-events:auto; width:38px;height:38px;border-radius:11px;border:1px solid var(--line);
+    background:var(--card); color:var(--ink); font-size:17px; cursor:pointer;
+    display:grid;place-items:center; box-shadow:var(--shadow);
+  }
+  .iconbtn:active{transform:scale(.94)}
+  .moa-btn{color:var(--accent);font-weight:700;text-decoration:none;font-size:19px}
+
+  /* ── 샘플 데이터 배지 ── */
+  .badge-sample{
+    position:absolute; z-index:1100; top:calc(64px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    background:var(--amber); color:#fff; font-size:12px; font-weight:700;
+    padding:6px 14px; border-radius:999px; box-shadow:var(--shadow); white-space:nowrap;
+  }
+
+  /* ── 패널(데스크톱=사이드 / 모바일=하단 시트) ── */
+  .panel{
+    position:absolute; z-index:1100; background:var(--card);
+    box-shadow:0 -10px 40px rgba(20,40,80,.16);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  @media(min-width:760px){
+    .panel{ top:calc(66px + env(safe-area-inset-top)); left:14px; bottom:14px; width:360px; border-radius:var(--radius); }
+    .grip{display:none}
+  }
+  @media(max-width:759px){
+    .panel{ left:0; right:0; bottom:0; border-radius:22px 22px 0 0; max-height:72vh;
+      transition:transform .28s cubic-bezier(.22,.8,.3,1); }
+    .panel.collapsed{transform:translateY(calc(100% - 150px))}
+  }
+  .grip{width:42px;height:5px;border-radius:3px;background:var(--line);margin:8px auto 2px;flex:none;cursor:pointer}
+  .panel-head{padding:10px 16px 8px;flex:none}
+  .panel-body{overflow:auto;padding:0 16px 16px;flex:1}
+
+  /* 요약 통계 */
+  .totals{display:flex;gap:8px;margin-bottom:10px}
+  .tot{
+    flex:1;background:var(--seg-bg);border:1px solid var(--line);border-radius:13px;
+    padding:10px 8px;text-align:center;
+  }
+  .tot .v{font-weight:800;font-size:16px}
+  .tot .k{font-size:10.5px;color:var(--sub);margin-top:2px}
+
+  .rowbtns{display:flex;gap:8px;margin-bottom:4px}
+  .btn{
+    border:none;border-radius:13px;padding:10px 14px;font-size:13.5px;font-weight:700;cursor:pointer;
+    background:var(--accent);color:#fff;display:flex;align-items:center;gap:6px;white-space:nowrap;justify-content:center;flex:1;
+  }
+  .btn:active{transform:scale(.96)}
+  .btn.ghost{background:var(--seg-bg);color:var(--ink);border:1px solid var(--line)}
+  .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  /* 런 목록 */
+  .runlist{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+  .run{
+    border:1.5px solid var(--line);border-radius:13px;padding:11px 13px;cursor:pointer;
+    background:var(--card);transition:.15s;
+  }
+  .run:hover{border-color:var(--accent)}
+  .run.sel{border-color:var(--accent);background:var(--accent-soft)}
+  .run .t{font-weight:800;font-size:14px;display:flex;justify-content:space-between;gap:8px}
+  .run .t .d{color:var(--sub);font-weight:600;font-size:12px;flex:none}
+  .run .chips{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+  .chip{font-size:11.5px;background:var(--seg-bg);border-radius:999px;padding:3px 9px;color:var(--sub);font-weight:600}
+  .chip b{color:var(--ink)}
+  .chip.hr b{color:var(--red)}
+
+  /* 상세 스탯 */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .stat{background:var(--seg-bg);border:1px solid var(--line);border-radius:12px;padding:9px;text-align:center}
+  .stat .v{font-weight:800;font-size:15px}
+  .stat .k{font-size:10.5px;color:var(--sub);margin-top:2px}
+  .zonebar{display:flex;height:10px;border-radius:6px;overflow:hidden;margin-top:10px;border:1px solid var(--line)}
+  .zonelegend{display:flex;justify-content:space-between;font-size:10px;color:var(--sub);margin-top:4px}
+  .charts{margin-top:10px;background:var(--seg-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
+  .charts svg{display:block;width:100%;height:110px}
+  .charts .cap{font-size:10.5px;color:var(--sub);text-align:center;margin-top:2px}
+  .backbtn{margin-top:10px}
+
+  .hint{font-size:12px;color:var(--sub);line-height:1.6;margin-top:10px}
+  .hint code{background:var(--seg-bg);padding:1px 6px;border-radius:6px;font-size:11px}
+  input[type=file]{display:none}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<header>
+  <div class="brand">
+    <div class="logo">🏃</div>
+    <div>
+      <h1 id="t-title">달리기</h1>
+      <div class="tag" id="t-sub">러닝 지도 대시보드</div>
+    </div>
+  </div>
+  <div class="sp"></div>
+  <a class="iconbtn moa-btn" href="https://clayborneyeounjunlee.github.io/moa/" title="moa hub">⌂</a>
+  <button class="iconbtn" id="btn-lang" title="한국어/English">Aa</button>
+  <button class="iconbtn" id="btn-theme" title="테마">◐</button>
+</header>
+
+<div class="badge-sample" id="badge-sample" style="display:none">📦 샘플 데이터 표시 중 — 실제 기록은 tools/strava_pull.js 로 수집</div>
+
+<div class="panel collapsed" id="panel">
+  <div class="grip" id="grip"></div>
+  <div class="panel-head">
+    <div class="totals">
+      <div class="tot"><div class="v" id="tot-runs">0</div><div class="k" data-i="runs">러닝</div></div>
+      <div class="tot"><div class="v" id="tot-km">0</div><div class="k" data-i="totalkm">누적 km</div></div>
+      <div class="tot"><div class="v" id="tot-month">0</div><div class="k" data-i="monthkm">이번 달 km</div></div>
+      <div class="tot"><div class="v" id="tot-pace">-</div><div class="k" data-i="avgpace">평균 페이스</div></div>
+    </div>
+    <div class="rowbtns">
+      <button class="btn ghost" id="btn-all" data-i="showall">🗺 전체 루트</button>
+      <button class="btn ghost" id="btn-gpx" data-i="loadgpx">📁 코스 GPX</button>
+    </div>
+    <input type="file" id="gpx-file" accept=".gpx">
+  </div>
+  <div class="panel-body">
+    <div id="view-list">
+      <div class="runlist" id="runlist"></div>
+      <div class="hint" id="t-hint">
+        실제 Strava 기록 연동: <code>tools/strava_pull.js</code> 실행 → <code>data/runs/</code> 생성.<br>
+        ⚠️ 실제 데이터(<code>data/runs/</code>)는 공개 저장소에 올리지 않기 (Strava 약관 + 집 위치 보호).
+      </div>
+    </div>
+    <div id="view-detail" style="display:none">
+      <div class="run sel" id="d-head">
+        <div class="t"><span id="d-name"></span><span class="d" id="d-date"></span></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="v" id="d-dist">-</div><div class="k">km</div></div>
+        <div class="stat"><div class="v" id="d-time">-</div><div class="k" data-i="time">시간</div></div>
+        <div class="stat"><div class="v" id="d-pace">-</div><div class="k" data-i="pace">페이스</div></div>
+        <div class="stat"><div class="v" id="d-elev">-</div><div class="k" data-i="elev">고도 ↑m</div></div>
+        <div class="stat"><div class="v" id="d-avghr">-</div><div class="k" data-i="avghr">평균 심박</div></div>
+        <div class="stat"><div class="v" id="d-maxhr">-</div><div class="k" data-i="maxhr">최고 심박</div></div>
+      </div>
+      <div id="d-zones" style="display:none">
+        <div class="zonebar" id="zonebar"></div>
+        <div class="zonelegend"><span>Z1 편함</span><span>Z2</span><span>Z3</span><span>Z4</span><span>Z5 전력</span></div>
+      </div>
+      <div class="charts" id="d-charts" style="display:none">
+        <svg id="chart" viewBox="0 0 340 110" preserveAspectRatio="none"></svg>
+        <div class="cap" id="chart-cap">심박(빨강) · 고도(회색)</div>
+      </div>
+      <button class="btn ghost backbtn" id="btn-back" data-i="back">← 목록으로</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ════ i18n ════ */
+var LANG = localStorage.getItem("hub-lang") || "ko";
+var I18N = {
+  ko:{ title:"달리기", sub:"러닝 지도 대시보드", runs:"러닝", totalkm:"누적 km", monthkm:"이번 달 km",
+       avgpace:"평균 페이스", showall:"🗺 전체 루트", loadgpx:"📁 코스 GPX", back:"← 목록으로",
+       time:"시간", pace:"페이스", elev:"고도 ↑m", avghr:"평균 심박", maxhr:"최고 심박",
+       sample:"📦 샘플 데이터 표시 중 — 실제 기록은 tools/strava_pull.js 로 수집",
+       hint:'실제 Strava 기록 연동: <code>tools/strava_pull.js</code> 실행 → <code>data/runs/</code> 생성.<br>⚠️ 실제 데이터(<code>data/runs/</code>)는 공개 저장소에 올리지 않기 (Strava 약관 + 집 위치 보호).',
+       chartcap:"심박(빨강) · 고도(회색)", nodata:"기록이 없어요. tools/strava_pull.js 를 실행해 주세요." },
+  en:{ title:"Running", sub:"Running map dashboard", runs:"runs", totalkm:"total km", monthkm:"this month km",
+       avgpace:"avg pace", showall:"🗺 All routes", loadgpx:"📁 Course GPX", back:"← Back to list",
+       time:"time", pace:"pace", elev:"elev ↑m", avghr:"avg HR", maxhr:"max HR",
+       sample:"📦 Showing sample data — run tools/strava_pull.js to sync real activities",
+       hint:'Sync real Strava data: run <code>tools/strava_pull.js</code> → creates <code>data/runs/</code>.<br>⚠️ Never publish real data (<code>data/runs/</code>) to a public repo (Strava ToS + home privacy).',
+       chartcap:"Heart rate (red) · Altitude (grey)", nodata:"No runs yet. Run tools/strava_pull.js first." }
+};
+function t(k){ return I18N[LANG][k] || k; }
+function applyLang(){
+  document.getElementById("t-title").textContent = t("title");
+  document.getElementById("t-sub").textContent = t("sub");
+  document.getElementById("badge-sample").textContent = t("sample");
+  document.getElementById("t-hint").innerHTML = t("hint");
+  document.getElementById("chart-cap").textContent = t("chartcap");
+  document.querySelectorAll("[data-i]").forEach(function(el){ el.textContent = t(el.dataset.i); });
+  document.documentElement.lang = LANG;
+}
+
+/* ════ 테마 ════ */
+var tileLight, tileDark, map;
+function applyTheme(th){
+  document.documentElement.dataset.theme = th;
+  try{ localStorage.setItem("hub-theme", th); }catch(e){}
+  if(map){ if(th==="dark"){ map.removeLayer(tileLight); tileDark.addTo(map); } else { map.removeLayer(tileDark); tileLight.addTo(map); } }
+}
+document.getElementById("btn-theme").onclick = function(){
+  applyTheme(document.documentElement.dataset.theme==="dark" ? "light" : "dark");
+};
+document.getElementById("btn-lang").onclick = function(){
+  LANG = LANG==="ko" ? "en" : "ko";
+  try{ localStorage.setItem("hub-lang", LANG); }catch(e){}
+  applyLang(); renderList();
+};
+
+/* ════ 지도 ════ */
+map = L.map("map", { zoomControl:true, attributionControl:true }).setView([37.5326, 126.9327], 13);
+map.zoomControl.setPosition("topright");
+var attr = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
+tileLight = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {attribution:attr, maxZoom:19});
+tileDark  = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {attribution:attr, maxZoom:19});
+(document.documentElement.dataset.theme==="dark" ? tileDark : tileLight).addTo(map);
+var canvasRenderer = L.canvas({ padding:0.3 });
+
+/* 숨김 탭/백그라운드에서 초기화되면 크기가 0으로 잡힘 → 동기 보정 + 복귀 시 재보정 */
+var lastBounds = null;
+function fixSize(){
+  map.invalidateSize({ animate:false });
+  if(lastBounds) map.fitBounds(lastBounds, { padding:[46,46] });
+}
+setTimeout(fixSize, 350);
+document.addEventListener("visibilitychange", function(){ if(!document.hidden) setTimeout(fixSize, 60); });
+window.__run = { map:map, refit:fixSize };   /* 디버그 훅 */
+
+/* ════ 심박 존 ════ */
+var HR_MAX = parseInt(localStorage.getItem("run-hrmax")||"190",10);
+var ZONES = [
+  { pct:0.60, color:"#4f8ef7" },   /* Z1 */
+  { pct:0.70, color:"#2f9e63" },   /* Z2 */
+  { pct:0.80, color:"#e6920b" },   /* Z3 */
+  { pct:0.90, color:"#f2703d" },   /* Z4 */
+  { pct:9.99, color:"#d64545" }    /* Z5 */
+];
+function zoneOf(hr){
+  var r = hr / HR_MAX;
+  for(var i=0;i<ZONES.length;i++) if(r < ZONES[i].pct) return i;
+  return ZONES.length-1;
+}
+
+/* ════ 상태 ════ */
+var BASE = null;          /* "data/runs" 또는 "data/samples" */
+var INDEX = [];           /* index.json 의 runs 배열 */
+var geoCache = {};        /* id → geojson */
+var routeLayers = [];     /* 현재 상세 루트 레이어 */
+var allLayer = null;      /* 전체 루트 오버레이 */
+var gpxLayers = [];       /* GPX 코스 레이어 */
+var selectedId = null;
+
+/* ════ 유틸 ════ */
+function fmtKm(m){ return (m/1000).toFixed(1); }
+function fmtTime(s){
+  var h = Math.floor(s/3600), m = Math.floor(s%3600/60), ss = Math.round(s%60);
+  return h>0 ? h+":"+String(m).padStart(2,"0")+":"+String(ss).padStart(2,"0")
+             : m+":"+String(ss).padStart(2,"0");
+}
+function fmtPace(sPerKm){
+  if(!sPerKm || !isFinite(sPerKm)) return "-";
+  var m = Math.floor(sPerKm/60), s = Math.round(sPerKm%60);
+  return m+"'"+String(s).padStart(2,"0")+'"';
+}
+function fmtDate(iso){
+  var d = new Date(iso);
+  return (d.getMonth()+1)+"/"+d.getDate() + (LANG==="ko" ? " ("+"일월화수목금토"[d.getDay()]+")" : "");
+}
+
+/* ════ 데이터 로드 (실데이터 → 없으면 샘플) ════ */
+function loadIndex(){
+  return fetch("data/runs/index.json", {cache:"no-store"})
+    .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+    .then(function(j){ BASE = "data/runs"; return j; })
+    .catch(function(){
+      return fetch("data/samples/index.json", {cache:"no-store"})
+        .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+        .then(function(j){ BASE = "data/samples"; document.getElementById("badge-sample").style.display="block"; return j; });
+    });
+}
+function loadRun(id){
+  if(geoCache[id]) return Promise.resolve(geoCache[id]);
+  var item = INDEX.find(function(r){ return r.id===id; });
+  return fetch(BASE+"/"+item.file, {cache:"no-store"}).then(function(r){ return r.json(); })
+    .then(function(g){ geoCache[id]=g; return g; });
+}
+
+/* ════ 요약 통계 ════ */
+function renderTotals(){
+  var totM=0, monthM=0, totS=0;
+  var now = new Date(), ym = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  INDEX.forEach(function(r){
+    totM += r.distance_m; totS += r.moving_time_s;
+    if((r.start_date||"").slice(0,7)===ym) monthM += r.distance_m;
+  });
+  document.getElementById("tot-runs").textContent = INDEX.length;
+  document.getElementById("tot-km").textContent = fmtKm(totM);
+  document.getElementById("tot-month").textContent = fmtKm(monthM);
+  document.getElementById("tot-pace").textContent = totM>0 ? fmtPace(totS/(totM/1000)) : "-";
+}
+
+/* ════ 런 목록 ════ */
+function renderList(){
+  var box = document.getElementById("runlist");
+  box.innerHTML = "";
+  if(!INDEX.length){
+    box.innerHTML = '<div class="hint">'+t("nodata")+'</div>';
+    return;
+  }
+  INDEX.forEach(function(r){
+    var el = document.createElement("div");
+    el.className = "run"+(r.id===selectedId?" sel":"");
+    var pace = fmtPace(r.moving_time_s/(r.distance_m/1000));
+    el.innerHTML =
+      '<div class="t"><span>'+esc(r.name)+'</span><span class="d">'+fmtDate(r.start_date)+'</span></div>'+
+      '<div class="chips">'+
+        '<span class="chip"><b>'+fmtKm(r.distance_m)+'</b> km</span>'+
+        '<span class="chip"><b>'+pace+'</b>/km</span>'+
+        '<span class="chip"><b>'+fmtTime(r.moving_time_s)+'</b></span>'+
+        (r.avg_hr ? '<span class="chip hr">♥ <b>'+Math.round(r.avg_hr)+'</b></span>' : "")+
+      '</div>';
+    el.onclick = function(){ selectRun(r.id); };
+    box.appendChild(el);
+  });
+}
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+/* ════ 루트 렌더 (심박 존 색상 구간 분할) ════ */
+function clearRoute(){ routeLayers.forEach(function(l){ map.removeLayer(l); }); routeLayers=[]; }
+function drawRun(geo){
+  clearRoute();
+  var coords = geo.geometry.coordinates;                    /* [lon,lat] */
+  var latlngs = coords.map(function(c){ return [c[1],c[0]]; });
+  var hr = (geo.properties.streams && geo.properties.streams.hr) || null;
+
+  /* 바탕 캐이싱(대비용) */
+  routeLayers.push(L.polyline(latlngs, {renderer:canvasRenderer, color:"#000", opacity:0.25, weight:7}).addTo(map));
+
+  if(hr && hr.length===latlngs.length){
+    /* 같은 존의 연속 구간을 하나의 폴리라인으로 묶기 */
+    var segStart = 0, curZone = zoneOf(hr[0]);
+    for(var i=1;i<=latlngs.length;i++){
+      var z = i<latlngs.length ? zoneOf(hr[i]) : -1;
+      if(z!==curZone){
+        routeLayers.push(L.polyline(latlngs.slice(segStart, i+1>latlngs.length?latlngs.length:i+1),
+          {renderer:canvasRenderer, color:ZONES[curZone].color, weight:4, opacity:0.95}).addTo(map));
+        segStart = i; curZone = z;
+      }
+    }
+  } else {
+    routeLayers.push(L.polyline(latlngs, {renderer:canvasRenderer, color:"var" in window? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() : "#e05d3a", weight:4, opacity:0.95}).addTo(map));
+  }
+  /* 시작/도착 마커 */
+  routeLayers.push(L.circleMarker(latlngs[0], {renderer:canvasRenderer, radius:6, color:"#fff", weight:2, fillColor:"#2f9e63", fillOpacity:1}).addTo(map).bindTooltip(LANG==="ko"?"출발":"Start"));
+  routeLayers.push(L.circleMarker(latlngs[latlngs.length-1], {renderer:canvasRenderer, radius:6, color:"#fff", weight:2, fillColor:"#d64545", fillOpacity:1}).addTo(map).bindTooltip(LANG==="ko"?"도착":"Finish"));
+  lastBounds = L.latLngBounds(latlngs);
+  map.fitBounds(lastBounds, {padding:[46,46]});
+}
+
+/* ════ 존 분포 바 + HR/고도 차트 ════ */
+function renderZones(hr){
+  var box = document.getElementById("d-zones"), bar = document.getElementById("zonebar");
+  if(!hr){ box.style.display="none"; return; }
+  var cnt = [0,0,0,0,0];
+  hr.forEach(function(v){ cnt[zoneOf(v)]++; });
+  bar.innerHTML = "";
+  cnt.forEach(function(c,i){
+    var d = document.createElement("div");
+    d.style.cssText = "flex:"+(c||0.001)+";background:"+ZONES[i].color;
+    bar.appendChild(d);
+  });
+  box.style.display = "block";
+}
+function renderChart(geo){
+  var box = document.getElementById("d-charts"), svg = document.getElementById("chart");
+  var st = geo.properties.streams || {};
+  var hr = st.hr, alt = st.alt_m;
+  if(!hr && !alt){ box.style.display="none"; return; }
+  var W=340, H=110, PAD=6, n = (hr||alt).length;
+  function pts(arr, lo, hi){
+    var out = [];
+    for(var i=0;i<arr.length;i++){
+      var x = PAD + (W-2*PAD)*i/(arr.length-1);
+      var y = H-PAD - (H-2*PAD)*((arr[i]-lo)/((hi-lo)||1));
+      out.push(x.toFixed(1)+","+y.toFixed(1));
+    }
+    return out.join(" ");
+  }
+  var s = "";
+  if(alt){
+    var alo = Math.min.apply(null,alt), ahi = Math.max.apply(null,alt);
+    s += '<polygon points="'+PAD+','+(H-PAD)+' '+pts(alt,alo,ahi+((ahi-alo)||1)*0.15)+' '+(W-PAD)+','+(H-PAD)+'" fill="#9094a6" opacity="0.35"/>';
+  }
+  if(hr){
+    var hlo = Math.min.apply(null,hr)-5, hhi = Math.max.apply(null,hr)+5;
+    s += '<polyline points="'+pts(hr,hlo,hhi)+'" fill="none" stroke="#d64545" stroke-width="1.8"/>';
+  }
+  svg.innerHTML = s;
+  box.style.display = "block";
+}
+
+/* ════ 상세 화면 ════ */
+function selectRun(id){
+  selectedId = id;
+  var r = INDEX.find(function(x){ return x.id===id; });
+  loadRun(id).then(function(geo){
+    drawRun(geo);
+    document.getElementById("view-list").style.display="none";
+    document.getElementById("view-detail").style.display="block";
+    document.getElementById("d-name").textContent = r.name;
+    document.getElementById("d-date").textContent = fmtDate(r.start_date);
+    document.getElementById("d-dist").textContent = fmtKm(r.distance_m);
+    document.getElementById("d-time").textContent = fmtTime(r.moving_time_s);
+    document.getElementById("d-pace").textContent = fmtPace(r.moving_time_s/(r.distance_m/1000));
+    document.getElementById("d-elev").textContent = r.elev_gain_m!=null ? Math.round(r.elev_gain_m) : "-";
+    document.getElementById("d-avghr").textContent = r.avg_hr ? Math.round(r.avg_hr) : "-";
+    document.getElementById("d-maxhr").textContent = r.max_hr ? Math.round(r.max_hr) : "-";
+    renderZones(geo.properties.streams && geo.properties.streams.hr);
+    renderChart(geo);
+    collapseOnMobile();
+  });
+}
+document.getElementById("btn-back").onclick = function(){
+  selectedId = null; clearRoute();
+  document.getElementById("view-detail").style.display="none";
+  document.getElementById("view-list").style.display="block";
+  renderList();
+};
+
+/* ════ 전체 루트 오버레이 ════ */
+document.getElementById("btn-all").onclick = function(){
+  var btn = this;
+  if(allLayer){ map.removeLayer(allLayer); allLayer=null; btn.classList.remove("on"); return; }
+  Promise.all(INDEX.map(function(r){ return loadRun(r.id); })).then(function(list){
+    var group = L.layerGroup();
+    var allB = null;
+    list.forEach(function(geo){
+      var ll = geo.geometry.coordinates.map(function(c){ return [c[1],c[0]]; });
+      group.addLayer(L.polyline(ll, {renderer:canvasRenderer, color:getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#e05d3a", weight:2.5, opacity:0.55}));
+      var b = L.latLngBounds(ll);
+      allB = allB ? allB.extend(b) : b;
+    });
+    group.addTo(map); allLayer = group; btn.classList.add("on");
+    if(allB){ lastBounds = allB; map.fitBounds(allB, {padding:[46,46]}); }
+    collapseOnMobile();
+  });
+};
+
+/* ════ GPX 코스 오버레이 (트랙 A — 파일은 내 소유 데이터) ════ */
+document.getElementById("btn-gpx").onclick = function(){ document.getElementById("gpx-file").click(); };
+document.getElementById("gpx-file").onchange = function(){
+  var f = this.files[0]; if(!f) return;
+  var rd = new FileReader();
+  rd.onload = function(){
+    try{
+      var xml = new DOMParser().parseFromString(rd.result, "application/xml");
+      var pts = Array.prototype.slice.call(xml.querySelectorAll("trkpt, rtept"));
+      var ll = pts.map(function(p){ return [parseFloat(p.getAttribute("lat")), parseFloat(p.getAttribute("lon"))]; })
+                  .filter(function(p){ return isFinite(p[0]) && isFinite(p[1]); });
+      if(!ll.length){ alert(LANG==="ko"?"GPX에서 트랙포인트를 찾지 못했어요":"No trackpoints found in GPX"); return; }
+      var layer = L.polyline(ll, {renderer:canvasRenderer, color:"#7c5cff", weight:4, opacity:0.85, dashArray:"7 7"})
+        .addTo(map).bindTooltip(f.name);
+      gpxLayers.push(layer);
+      map.fitBounds(L.latLngBounds(ll), {padding:[46,46]});
+      collapseOnMobile();
+    }catch(e){ alert("GPX parse error"); }
+  };
+  rd.readAsText(f);
+  this.value = "";
+};
+
+/* ════ 모바일 시트 ════ */
+var panel = document.getElementById("panel");
+document.getElementById("grip").onclick = function(){ panel.classList.toggle("collapsed"); };
+function collapseOnMobile(){ if(matchMedia("(max-width:759px)").matches) panel.classList.add("collapsed"); }
+
+/* ════ 부팅 ════ */
+applyLang();
+loadIndex().then(function(j){
+  INDEX = (j.runs||[]).slice().sort(function(a,b){ return b.start_date.localeCompare(a.start_date); });
+  renderTotals(); renderList();
+  if(INDEX.length) selectRun(INDEX[0].id);
+}).catch(function(){
+  document.getElementById("runlist").innerHTML = '<div class="hint">'+t("nodata")+'</div>';
+});
+
+})();
+</script>
+</body>
+</html>
